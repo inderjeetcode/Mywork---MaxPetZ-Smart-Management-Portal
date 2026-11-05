@@ -194,11 +194,62 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return Array.from(new Set(invoices.map(i => i.mode_of_payment).filter(Boolean))).sort();
   }, [invoices]);
 
+  // Active NGO map for dynamic classification: normalized client_id -> NGO
+  const activeNgoMap = useMemo(() => {
+    const map = new Map<string, NGO>();
+    ngos.forEach(ngo => {
+      if (ngo.status === 'ACTIVE' && ngo.client_id) {
+        map.set(ngo.client_id.trim().toUpperCase(), ngo);
+      }
+    });
+    return map;
+  }, [ngos]);
+
+  // Dynamically classified invoices:
+  // An invoice is dynamically classified as NGO if its client_id matches an ACTIVE NGO in ngo_master.
+  // If not matching active NGO, if it was historically classified as NGO (snapshot preservation upon unlinking), it retains NGO.
+  // Otherwise, if client_id exists, it's NON_NGO; if no client_id, UNCLASSIFIED.
+  const classifiedInvoices = useMemo<Invoice[]>(() => {
+    return invoices.map(inv => {
+      const rawId = inv.client_id ? String(inv.client_id).trim() : '';
+      if (!rawId) {
+        return {
+          ...inv,
+          client_type: 'UNCLASSIFIED',
+          ngo_name: null,
+        };
+      }
+
+      const normalized = rawId.toUpperCase();
+      const activeNgo = activeNgoMap.get(normalized);
+
+      if (activeNgo) {
+        return {
+          ...inv,
+          client_type: 'NGO',
+          ngo_name: activeNgo.ngo_name,
+        };
+      }
+
+      // If not currently in active NGO map, check if it had a historical NGO snapshot tag
+      // (Requirement 4: When an NGO is unlinked, retain historical NGO classifications and only affect future imports)
+      if (inv.client_type === 'NGO') {
+        return inv;
+      }
+
+      return {
+        ...inv,
+        client_type: 'NON_NGO',
+        ngo_name: null,
+      };
+    });
+  }, [invoices, activeNgoMap]);
+
   // Global Filtering Logic with Client Type & Client ID search
   const filteredInvoices = useMemo(() => {
     const today = new Date();
 
-    return invoices.filter(inv => {
+    return classifiedInvoices.filter(inv => {
       // 1. Client Type filter: All, NGO, Non-NGO, Unclassified
       if (filters.clientType !== 'all') {
         const type = inv.client_type || 'UNCLASSIFIED';
@@ -207,10 +258,10 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (filters.clientType === 'unclassified' && type !== 'UNCLASSIFIED') return false;
       }
 
-      // 2. Client ID search
+      // 2. Client ID search (Normalized)
       if (filters.clientIdSearch) {
         const qId = filters.clientIdSearch.trim().toLowerCase();
-        if (!inv.client_id || !inv.client_id.toLowerCase().includes(qId)) {
+        if (!inv.client_id || !inv.client_id.trim().toLowerCase().includes(qId)) {
           return false;
         }
       }
@@ -304,7 +355,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return true;
     });
-  }, [invoices, filters]);
+  }, [classifiedInvoices, filters]);
 
   // Executive KPI Calculations with Strict 3-Way Outstanding Distribution
   const {
@@ -529,16 +580,17 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return result.sort((a, b) => b.total_outstanding - a.total_outstanding);
   }, [filteredInvoices, totalOutstanding]);
 
-  // NGO Analytics Summaries
+  // NGO Analytics Summaries (Aggregated from classified invoices matching registered NGOs)
   const ngoSummaries = useMemo<NGOAnalyticsSummary[]>(() => {
     // Map registered NGOs
     const summaryMap = new Map<string, NGOAnalyticsSummary>();
 
     ngos.forEach(ngo => {
-      summaryMap.set(ngo.client_id.trim().toUpperCase(), {
+      const normKey = ngo.client_id.trim().toUpperCase();
+      summaryMap.set(normKey, {
         id: ngo.id,
         ngo_name: ngo.ngo_name,
-        client_id: ngo.client_id,
+        client_id: ngo.client_id.trim(),
         total_outstanding: 0,
         total_amount: 0,
         invoice_count: 0,
@@ -551,7 +603,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const clinicsPerNgo = new Map<string, Set<string>>();
 
-    filteredInvoices.forEach(inv => {
+    classifiedInvoices.forEach(inv => {
       if (inv.client_id) {
         const key = inv.client_id.trim().toUpperCase();
         let summary = summaryMap.get(key);
@@ -561,7 +613,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
           summary = {
             id: key,
             ngo_name: inv.ngo_name || inv.client_name,
-            client_id: inv.client_id,
+            client_id: inv.client_id.trim(),
             total_outstanding: 0,
             total_amount: 0,
             invoice_count: 0,
@@ -594,7 +646,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return Array.from(summaryMap.values()).sort((a, b) => b.total_outstanding - a.total_outstanding);
-  }, [ngos, filteredInvoices]);
+  }, [ngos, classifiedInvoices]);
 
   // NGO Master Operations
   const addNgo = async (ngoData: Omit<NGO, 'id' | 'created_at' | 'updated_at'>) => {
@@ -603,9 +655,11 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Client ID is mandatory.' };
     }
 
+    const normTargetId = cleanClientId.toUpperCase();
+
     // Check duplicate client_id
     const exists = ngos.some(
-      n => n.client_id.trim().toUpperCase() === cleanClientId.toUpperCase()
+      n => n.client_id.trim().toUpperCase() === normTargetId
     );
     if (exists) {
       return { success: false, error: `NGO with Client ID "${cleanClientId}" already exists.` };
@@ -619,15 +673,48 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updated_at: new Date().toISOString(),
     };
 
+    // 1. Insert into Supabase ngo_master
     try {
       await supabase.from('ngo_master').insert([newNgo]);
     } catch (err) {
       console.warn('Supabase ngo_master insert fallback:', err);
     }
 
-    const next = [...ngos, newNgo];
-    setNgos(next);
-    localStorage.setItem(LOCAL_NGOS_KEY, JSON.stringify(next));
+    // 2. Persist in Supabase invoices table so database reflects classification
+    try {
+      await supabase
+        .from('invoices')
+        .update({
+          client_type: 'NGO',
+          ngo_name: newNgo.ngo_name,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('client_id', cleanClientId);
+    } catch (err) {
+      console.warn('Supabase invoices client_type update fallback:', err);
+    }
+
+    // 3. Update local state
+    const nextNgos = [...ngos, newNgo];
+    setNgos(nextNgos);
+    localStorage.setItem(LOCAL_NGOS_KEY, JSON.stringify(nextNgos));
+
+    // Update in-memory invoices as well
+    setInvoices(prev => {
+      const updated = prev.map(inv => {
+        if (inv.client_id && inv.client_id.trim().toUpperCase() === normTargetId) {
+          return {
+            ...inv,
+            client_type: 'NGO' as const,
+            ngo_name: newNgo.ngo_name,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return inv;
+      });
+      localStorage.setItem(LOCAL_INVOICES_KEY, JSON.stringify(updated));
+      return updated;
+    });
 
     return { success: true };
   };
@@ -642,6 +729,29 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.from('ngo_master').update(updates).eq('id', id);
     } catch (err) {
       console.warn('Supabase ngo_master update fallback:', err);
+    }
+
+    // If ngo_name updated, update existing invoices
+    if (updates.ngo_name && updates.ngo_name !== target.ngo_name) {
+      try {
+        await supabase
+          .from('invoices')
+          .update({ ngo_name: updates.ngo_name })
+          .eq('client_id', target.client_id);
+      } catch (err) {
+        console.warn('Supabase invoices ngo_name update fallback:', err);
+      }
+
+      setInvoices(prev => {
+        const next = prev.map(inv => {
+          if (inv.client_id && inv.client_id.trim().toUpperCase() === target.client_id.trim().toUpperCase()) {
+            return { ...inv, ngo_name: updates.ngo_name! };
+          }
+          return inv;
+        });
+        localStorage.setItem(LOCAL_INVOICES_KEY, JSON.stringify(next));
+        return next;
+      });
     }
 
     const next = ngos.map(n => (n.id === id ? updated : n));
@@ -813,7 +923,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <DuesContext.Provider
       value={{
-        invoices,
+        invoices: classifiedInvoices,
         filteredInvoices,
         ngos,
         importBatches,
