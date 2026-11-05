@@ -1,0 +1,6 @@
+{
+  "name": "Mywork - MaxPetZ Smart Management Portal",
+  "description": "Enterprise operations and financial intelligence platform for MaxPetZ Hospitals Pvt. Ltd., featuring clinic and staff dues analytics, Excel/CSV import, and daily task productivity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
