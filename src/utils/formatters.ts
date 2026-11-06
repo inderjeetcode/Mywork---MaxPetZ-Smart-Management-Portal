@@ -15,6 +15,22 @@ export function formatINR(amount: number | null | undefined): string {
 }
 
 /**
+ * Currency formatter alias for formatINR
+ */
+export const formatCurrency = formatINR;
+
+/**
+ * Formats compact numbers for axis ticks (e.g., 1000 -> "1K", 100000 -> "1L" or "100K")
+ */
+export function formatCompactNumber(num: number | null | undefined): string {
+  const val = Number(num) || 0;
+  if (Math.abs(val) >= 10000000) return `${(val / 10000000).toFixed(1)}Cr`;
+  if (Math.abs(val) >= 100000) return `${(val / 100000).toFixed(1)}L`;
+  if (Math.abs(val) >= 1000) return `${(val / 1000).toFixed(1)}K`;
+  return String(val);
+}
+
+/**
  * Formats numbers with Indian digit grouping without currency symbol.
  */
 export function formatIndianNumber(num: number | null | undefined): string {

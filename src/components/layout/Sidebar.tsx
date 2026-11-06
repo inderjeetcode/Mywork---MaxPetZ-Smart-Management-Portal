@@ -29,12 +29,23 @@ export type DuesTab =
   | 'import' 
   | 'database';
 
+export type CartDueTab =
+  | 'cart_overview'
+  | 'cart_ngo_mgmt'
+  | 'cart_clients'
+  | 'cart_followups'
+  | 'cart_collections'
+  | 'cart_analytics'
+  | 'cart_data';
+
 export type TaskTab = 'all_tasks' | 'today' | 'upcoming' | 'overdue' | 'completed' | 'notes' | 'productivity';
 
 interface SidebarProps {
-  activeDashboard: 'dues' | 'tasks';
+  activeDashboard: 'dues' | 'cart_due' | 'tasks';
   activeDuesTab: DuesTab;
   setActiveDuesTab: (t: DuesTab) => void;
+  activeCartDueTab: CartDueTab;
+  setActiveCartDueTab: (t: CartDueTab) => void;
   activeTaskTab: TaskTab;
   setActiveTaskTab: (t: TaskTab) => void;
   overdueCount?: number;
@@ -44,6 +55,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeDashboard,
   activeDuesTab,
   setActiveDuesTab,
+  activeCartDueTab,
+  setActiveCartDueTab,
   activeTaskTab,
   setActiveTaskTab,
   overdueCount = 0,
@@ -52,10 +65,107 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="w-60 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between p-3.5 transition-colors">
       <div className="overflow-y-auto pr-1">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-3 mb-2">
-          {activeDashboard === 'dues' ? 'Financial Intelligence' : 'Daily Task Workspace'}
+          {activeDashboard === 'dues'
+            ? 'Financial Intelligence'
+            : activeDashboard === 'cart_due'
+            ? 'Cart Due Management'
+            : 'Daily Task Workspace'}
         </div>
 
-        {activeDashboard === 'dues' ? (
+        {activeDashboard === 'cart_due' ? (
+          <nav className="space-y-1">
+            <button
+              onClick={() => setActiveCartDueTab('cart_overview')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_overview'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0 text-indigo-600" />
+              <span>Cart Due Overview</span>
+            </button>
+
+            <button
+              onClick={() => setActiveCartDueTab('cart_ngo_mgmt')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_ngo_mgmt'
+                  ? 'bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Building2 className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>Cart NGO Management</span>
+            </button>
+
+            <button
+              onClick={() => setActiveCartDueTab('cart_clients')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_clients'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0 text-blue-500" />
+              <span>Client Records</span>
+            </button>
+
+
+            <button
+              onClick={() => setActiveCartDueTab('cart_followups')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_followups'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Clock className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>Cart Due Follow-ups</span>
+            </button>
+
+            <button
+              onClick={() => setActiveCartDueTab('cart_collections')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_collections'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 shrink-0 text-emerald-500" />
+              <span>Cart Collections</span>
+            </button>
+
+            <button
+              onClick={() => setActiveCartDueTab('cart_analytics')}
+              className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                activeCartDueTab === 'cart_analytics'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4 shrink-0 text-purple-500" />
+              <span>Cart Due Analytics</span>
+            </button>
+
+            <div className="pt-3 my-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-3 mb-1.5">
+                Data Infrastructure
+              </div>
+
+              <button
+                onClick={() => setActiveCartDueTab('cart_data')}
+                className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                  activeCartDueTab === 'cart_data'
+                    ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <FolderSync className="w-4 h-4 shrink-0 text-indigo-500" />
+                <span>Cart Data Management</span>
+              </button>
+            </div>
+          </nav>
+        ) : activeDashboard === 'dues' ? (
           <nav className="space-y-1">
             <button
               onClick={() => setActiveDuesTab('overview')}

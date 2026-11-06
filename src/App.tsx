@@ -4,7 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DuesProvider, useDues } from './context/DuesContext';
 import { TaskProvider, useTasks } from './context/TaskContext';
 import { Header } from './components/layout/Header';
-import { Sidebar, DuesTab, TaskTab } from './components/layout/Sidebar';
+import { CartDueProvider, useCartDue } from './context/CartDueContext';
+import { Sidebar, DuesTab, CartDueTab, TaskTab } from './components/layout/Sidebar';
 import { LoginPage } from './components/auth/LoginPage';
 import { ExecutiveKpis } from './components/dues/ExecutiveKpis';
 import { GlobalFilterBar } from './components/dues/GlobalFilterBar';
@@ -19,6 +20,14 @@ import { ClientManagementView } from './components/dues/ClientManagementView';
 import { DataManagementView } from './components/import/DataManagementView';
 import { DatabaseMigrationView } from './components/database/DatabaseMigrationView';
 import { TaskDashboardView } from './components/tasks/TaskDashboardView';
+import { CartDueOverview } from './components/cartDue/CartDueOverview';
+import { CartDueNgoManagementView } from './components/cartDue/CartDueNgoManagementView';
+import { CartDueClientsView } from './components/cartDue/CartDueClientsView';
+import { CartDueFollowupsView } from './components/cartDue/CartDueFollowupsView';
+import { CartDueCollectionsView } from './components/cartDue/CartDueCollectionsView';
+import { CartDueAnalyticsView } from './components/cartDue/CartDueAnalyticsView';
+import { CartDueDataManagementView } from './components/cartDue/CartDueDataManagementView';
+import { CartDueFilterBar } from './components/cartDue/CartDueFilterBar';
 import { X } from 'lucide-react';
 
 const MainPortal: React.FC = () => {
@@ -49,10 +58,19 @@ const MainPortal: React.FC = () => {
     availablePaymentModes,
   } = useDues();
 
+  const {
+    filteredRecords: filteredCartRecords,
+    filters: cartFilters,
+    setFilters: setCartFilters,
+    resetFilters: resetCartFilters,
+    availableProviders: cartAvailableProviders,
+  } = useCartDue();
+
   const { overdueTasksCount } = useTasks();
 
-  const [activeDashboard, setActiveDashboard] = useState<'dues' | 'tasks'>('dues');
+  const [activeDashboard, setActiveDashboard] = useState<'dues' | 'cart_due' | 'tasks'>('dues');
   const [activeDuesTab, setActiveDuesTab] = useState<DuesTab>('overview');
+  const [activeCartDueTab, setActiveCartDueTab] = useState<CartDueTab>('cart_overview');
   const [activeTaskTab, setActiveTaskTab] = useState<TaskTab>('all_tasks');
   const [importModalOpen, setImportModalOpen] = useState(false);
 
@@ -77,6 +95,10 @@ const MainPortal: React.FC = () => {
     activeDuesTab !== 'database' && 
     activeDuesTab !== 'ngo_mgmt';
 
+  const showCartDueFilter = 
+    activeCartDueTab !== 'cart_data' &&
+    activeCartDueTab !== 'cart_ngo_mgmt';
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* Sticky Top Header */}
@@ -86,6 +108,8 @@ const MainPortal: React.FC = () => {
         onOpenImport={() => {
           if (activeDashboard === 'dues') {
             setActiveDuesTab('import');
+          } else if (activeDashboard === 'cart_due') {
+            setActiveCartDueTab('cart_data');
           } else {
             setImportModalOpen(true);
           }
@@ -98,6 +122,8 @@ const MainPortal: React.FC = () => {
           activeDashboard={activeDashboard}
           activeDuesTab={activeDuesTab}
           setActiveDuesTab={setActiveDuesTab}
+          activeCartDueTab={activeCartDueTab}
+          setActiveCartDueTab={setActiveCartDueTab}
           activeTaskTab={activeTaskTab}
           setActiveTaskTab={setActiveTaskTab}
           overdueCount={overdueTasksCount}
@@ -226,6 +252,59 @@ const MainPortal: React.FC = () => {
               {/* Dues Tab: Supabase & SQL Assistant */}
               {activeDuesTab === 'database' && <DatabaseMigrationView />}
             </div>
+          ) : activeDashboard === 'cart_due' ? (
+            /* Cart Due Dashboard (100% Isolated 3rd Main Dashboard) */
+            <div className="max-w-7xl mx-auto space-y-6">
+              {/* Cart Due Filter Bar */}
+              {showCartDueFilter && (
+                <CartDueFilterBar
+                  filters={cartFilters}
+                  setFilters={setCartFilters}
+                  resetFilters={resetCartFilters}
+                  availableProviders={cartAvailableProviders}
+                  resultCount={filteredCartRecords.length}
+                />
+              )}
+
+              {/* Cart Due Tab: Overview */}
+              {activeCartDueTab === 'cart_overview' && (
+                <CartDueOverview
+                  onNavigateToDataManagement={() => setActiveCartDueTab('cart_data')}
+                  onNavigateToFollowups={() => setActiveCartDueTab('cart_followups')}
+                />
+              )}
+
+              {/* Cart Due Tab: Dedicated NGO Management */}
+              {activeCartDueTab === 'cart_ngo_mgmt' && (
+                <CartDueNgoManagementView />
+              )}
+
+
+              {/* Cart Due Tab: Client Directory & Ledger Drawer */}
+              {activeCartDueTab === 'cart_clients' && (
+                <CartDueClientsView />
+              )}
+
+              {/* Cart Due Tab: Follow-up CRM (5 Tabs) */}
+              {activeCartDueTab === 'cart_followups' && (
+                <CartDueFollowupsView />
+              )}
+
+              {/* Cart Due Tab: Collections & Advance Credit Ledger */}
+              {activeCartDueTab === 'cart_collections' && (
+                <CartDueCollectionsView />
+              )}
+
+              {/* Cart Due Tab: 7 Visual Reports & Analytics */}
+              {activeCartDueTab === 'cart_analytics' && (
+                <CartDueAnalyticsView />
+              )}
+
+              {/* Cart Due Tab: Data Management & Excel Importer */}
+              {activeCartDueTab === 'cart_data' && (
+                <CartDueDataManagementView />
+              )}
+            </div>
           ) : (
             /* My Tasks Dashboard */
             <div className="max-w-5xl mx-auto">
@@ -258,11 +337,14 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <DuesProvider>
-          <TaskProvider>
-            <MainPortal />
-          </TaskProvider>
+          <CartDueProvider>
+            <TaskProvider>
+              <MainPortal />
+            </TaskProvider>
+          </CartDueProvider>
         </DuesProvider>
       </AuthProvider>
     </ThemeProvider>
   );
 }
+

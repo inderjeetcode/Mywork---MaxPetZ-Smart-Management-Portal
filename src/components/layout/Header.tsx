@@ -15,9 +15,12 @@ import { useTheme } from '../../context/ThemeContext';
 import { useDues } from '../../context/DuesContext';
 import { downloadSampleExcelTemplate } from '../../services/sampleDataService';
 
+import { useCartDue } from '../../context/CartDueContext';
+import { ShoppingCart } from 'lucide-react';
+
 interface HeaderProps {
-  activeDashboard: 'dues' | 'tasks';
-  setActiveDashboard: (d: 'dues' | 'tasks') => void;
+  activeDashboard: 'dues' | 'cart_due' | 'tasks';
+  setActiveDashboard: (d: 'dues' | 'cart_due' | 'tasks') => void;
   onOpenImport: () => void;
 }
 
@@ -29,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { user, profile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { invoices } = useDues();
+  const { records: cartRecords } = useCartDue();
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-4 px-6 py-3.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors">
@@ -52,11 +56,12 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Zone 2: Dashboard Switcher (Instant switch without reload) */}
+      {/* Zone 2: Dashboard Switcher (3 Independent Main Dashboards) */}
       <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+        {/* 1. Dues Dashboard */}
         <button
           onClick={() => setActiveDashboard('dues')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
             activeDashboard === 'dues'
               ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -71,9 +76,28 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
+        {/* 2. Cart Due Dashboard */}
+        <button
+          onClick={() => setActiveDashboard('cart_due')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+            activeDashboard === 'cart_due'
+              ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          }`}
+        >
+          <ShoppingCart className="w-3.5 h-3.5" />
+          <span>Cart Due Dashboard</span>
+          {cartRecords.length > 0 && (
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 font-mono">
+              {cartRecords.length}
+            </span>
+          )}
+        </button>
+
+        {/* 3. My Tasks Dashboard */}
         <button
           onClick={() => setActiveDashboard('tasks')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
             activeDashboard === 'tasks'
               ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'

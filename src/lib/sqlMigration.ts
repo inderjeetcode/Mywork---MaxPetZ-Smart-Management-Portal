@@ -374,25 +374,220 @@ USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
--- 6. PRIVATE STORAGE BUCKET: maxpetz-imports
+-- 7. CART DUE DASHBOARD TABLES (COMPLETELY ISOLATED REVENUE & COLLECTIONS)
 -- ==============================================================================
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'maxpetz-imports',
-    'maxpetz-imports',
-    false,
-    52428800, -- 50MB
-    ARRAY['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'text/csv']
-)
-ON CONFLICT (id) DO UPDATE SET public = false;
 
-DROP POLICY IF EXISTS "Authenticated users can upload import spreadsheets" ON storage.objects;
-CREATE POLICY "Authenticated users can upload import spreadsheets" ON storage.objects
-FOR INSERT TO authenticated
-WITH CHECK (bucket_id = 'maxpetz-imports');
+-- Table 14: cart_due_import_batches
+CREATE TABLE IF NOT EXISTS public.cart_due_import_batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_name TEXT NOT NULL,
+    file_size BIGINT NOT NULL DEFAULT 0,
+    total_rows INT NOT NULL DEFAULT 0,
+    imported_rows INT NOT NULL DEFAULT 0,
+    skipped_rows INT NOT NULL DEFAULT 0,
+    updated_rows INT NOT NULL DEFAULT 0,
+    total_outstanding_imported NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    uploaded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-DROP POLICY IF EXISTS "Authenticated users can view/download import spreadsheets" ON storage.objects;
-CREATE POLICY "Authenticated users can view/download import spreadsheets" ON storage.objects
-FOR SELECT TO authenticated
-USING (bucket_id = 'maxpetz-imports');
+-- Table 15: cart_due_records (Data source: cart due auto format.xlsx)
+CREATE TABLE IF NOT EXISTS public.cart_due_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sr_no TEXT,
+    client_id TEXT NOT NULL, -- Client ID stored strictly as TEXT preserving leading zeroes
+    client_name TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    record_date DATE NOT NULL,
+    original_amount NUMERIC(14, 2) NOT NULL DEFAULT 0.00, -- Mapped from Extension
+    paid_amount NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    remaining_amount NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    status TEXT NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid', 'Partial', 'Paid')),
+    import_batch_id UUID REFERENCES public.cart_due_import_batches(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 16: cart_due_import_errors
+CREATE TABLE IF NOT EXISTS public.cart_due_import_errors (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id UUID REFERENCES public.cart_due_import_batches(id) ON DELETE CASCADE,
+    row_index INT NOT NULL,
+    client_name TEXT,
+    client_id TEXT,
+    raw_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 17: cart_due_payments (Independent Cart Payment Transactions)
+CREATE TABLE IF NOT EXISTS public.cart_due_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id TEXT NOT NULL, -- references cart_due_records or 'advance-credit'
+    client_id TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL,
+    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    payment_method TEXT NOT NULL DEFAULT 'Cash',
+    reference_no TEXT,
+    notes TEXT,
+    is_advance_excess BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 18: cart_due_advance_credits (Available advance credit balances per client)
+CREATE TABLE IF NOT EXISTS public.cart_due_advance_credits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id TEXT NOT NULL UNIQUE,
+    client_name TEXT NOT NULL,
+    total_credit NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    used_credit NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    available_credit NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 19: cart_due_advance_allocations (Audit trail of applied credits)
+CREATE TABLE IF NOT EXISTS public.cart_due_advance_allocations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    advance_credit_id UUID REFERENCES public.cart_due_advance_credits(id) ON DELETE CASCADE,
+    client_id TEXT NOT NULL,
+    record_id UUID REFERENCES public.cart_due_records(id) ON DELETE CASCADE,
+    allocated_amount NUMERIC(14, 2) NOT NULL,
+    allocated_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 20: cart_due_followups (Call Due Follow-up CRM)
+CREATE TABLE IF NOT EXISTS public.cart_due_followups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id UUID REFERENCES public.cart_due_records(id) ON DELETE SET NULL,
+    client_id TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    provider_name TEXT,
+    contact_person TEXT,
+    phone TEXT,
+    contact_method TEXT NOT NULL DEFAULT 'Phone Call',
+    contact_result TEXT NOT NULL DEFAULT 'Promise to Pay',
+    notes TEXT NOT NULL,
+    followup_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    next_followup_date DATE,
+    has_reminder BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Completed', 'Overdue')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 21: cart_due_followup_notes
+CREATE TABLE IF NOT EXISTS public.cart_due_followup_notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    followup_id UUID NOT NULL REFERENCES public.cart_due_followups(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    note_text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 22: cart_due_reminders
+CREATE TABLE IF NOT EXISTS public.cart_due_reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    followup_id UUID NOT NULL REFERENCES public.cart_due_followups(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    reminder_time TIMESTAMPTZ NOT NULL,
+    is_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table 23: cart_due_ngo_master (Dedicated Cart Due NGO Master)
+CREATE TABLE IF NOT EXISTS public.cart_due_ngo_master (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id TEXT NOT NULL UNIQUE, -- Client ID stored strictly as TEXT preserving leading zeroes
+    ngo_name TEXT NOT NULL,
+    contact_person TEXT,
+    email TEXT,
+    phone TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Safe migrations in case cart_due_records already existed:
+ALTER TABLE public.cart_due_records ADD COLUMN IF NOT EXISTS client_type TEXT DEFAULT 'NORMAL';
+ALTER TABLE public.cart_due_records ADD COLUMN IF NOT EXISTS ngo_name TEXT;
+
+-- Cart Due Indexes
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_client_id ON public.cart_due_records(client_id);
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_client_type ON public.cart_due_records(client_type);
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_provider ON public.cart_due_records(provider_name);
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_date ON public.cart_due_records(record_date);
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_status ON public.cart_due_records(status);
+CREATE INDEX IF NOT EXISTS idx_cart_due_records_remaining ON public.cart_due_records(remaining_amount);
+CREATE INDEX IF NOT EXISTS idx_cart_due_payments_client ON public.cart_due_payments(client_id);
+CREATE INDEX IF NOT EXISTS idx_cart_due_advances_client ON public.cart_due_advance_credits(client_id);
+CREATE INDEX IF NOT EXISTS idx_cart_due_followups_client ON public.cart_due_followups(client_id);
+CREATE INDEX IF NOT EXISTS idx_cart_due_followups_next_date ON public.cart_due_followups(next_followup_date);
+CREATE INDEX IF NOT EXISTS idx_cart_due_ngo_client_id ON public.cart_due_ngo_master(client_id);
+CREATE INDEX IF NOT EXISTS idx_cart_due_ngo_status ON public.cart_due_ngo_master(status);
+
+-- Cart Due Triggers
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_cart_due_records_updated_at') THEN
+        CREATE TRIGGER trg_cart_due_records_updated_at BEFORE UPDATE ON public.cart_due_records FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_cart_due_advances_updated_at') THEN
+        CREATE TRIGGER trg_cart_due_advances_updated_at BEFORE UPDATE ON public.cart_due_advance_credits FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_cart_due_followups_updated_at') THEN
+        CREATE TRIGGER trg_cart_due_followups_updated_at BEFORE UPDATE ON public.cart_due_followups FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_cart_due_ngo_master_updated_at') THEN
+        CREATE TRIGGER trg_cart_due_ngo_master_updated_at BEFORE UPDATE ON public.cart_due_ngo_master FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+    END IF;
+END $$;
+
+-- Cart Due RLS
+ALTER TABLE public.cart_due_import_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_import_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_advance_credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_advance_allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_followups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_followup_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_due_ngo_master ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Cart Due batches manageable" ON public.cart_due_import_batches;
+CREATE POLICY "Cart Due batches manageable" ON public.cart_due_import_batches FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due records manageable" ON public.cart_due_records;
+CREATE POLICY "Cart Due records manageable" ON public.cart_due_records FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due errors manageable" ON public.cart_due_import_errors;
+CREATE POLICY "Cart Due errors manageable" ON public.cart_due_import_errors FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due payments manageable" ON public.cart_due_payments;
+CREATE POLICY "Cart Due payments manageable" ON public.cart_due_payments FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due advances manageable" ON public.cart_due_advance_credits;
+CREATE POLICY "Cart Due advances manageable" ON public.cart_due_advance_credits FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due allocations manageable" ON public.cart_due_advance_allocations;
+CREATE POLICY "Cart Due allocations manageable" ON public.cart_due_advance_allocations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due followups manageable" ON public.cart_due_followups;
+CREATE POLICY "Cart Due followups manageable" ON public.cart_due_followups FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due followup notes manageable" ON public.cart_due_followup_notes;
+CREATE POLICY "Cart Due followup notes manageable" ON public.cart_due_followup_notes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due reminders manageable" ON public.cart_due_reminders;
+CREATE POLICY "Cart Due reminders manageable" ON public.cart_due_reminders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Cart Due NGO Master manageable" ON public.cart_due_ngo_master;
+CREATE POLICY "Cart Due NGO Master manageable" ON public.cart_due_ngo_master FOR ALL TO authenticated USING (true) WITH CHECK (true);
 `;
+

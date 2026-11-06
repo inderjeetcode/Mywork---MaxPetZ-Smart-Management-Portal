@@ -95,6 +95,33 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>(initialFilters);
 
+const DEFAULT_NGOS: NGO[] = [
+  {
+    id: 'ngo-001',
+    ngo_name: 'Friendicoes SECA',
+    client_id: 'NGO-00042',
+    contact_person: 'Geeta Seshamani',
+    email: 'accounts@friendicoes.org',
+    phone: '+91 98991 23456',
+    notes: 'Defence Colony Flyover Market, New Delhi. Monthly aggregate billing, 30-day settlement cycle.',
+    status: 'ACTIVE',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'ngo-002',
+    ngo_name: 'People For Animals',
+    client_id: 'NGO-00088',
+    contact_person: 'Amit Chaudhuri',
+    email: 'billing@pfa-india.org',
+    phone: '+91 98188 12345',
+    notes: '14 Ashoka Road, New Delhi. Net-45 days with authorized verification signature.',
+    status: 'ACTIVE',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
   // Fetch initial records from Supabase with safe local storage fallback
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -105,7 +132,7 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .order('ngo_name', { ascending: true });
 
-      if (!ngoErr && dbNgos) {
+      if (!ngoErr && dbNgos && dbNgos.length > 0) {
         setNgos(dbNgos);
         localStorage.setItem(LOCAL_NGOS_KEY, JSON.stringify(dbNgos));
       } else {
@@ -114,8 +141,11 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             setNgos(JSON.parse(savedNgos));
           } catch {
-            setNgos([]);
+            setNgos(DEFAULT_NGOS);
           }
+        } else {
+          setNgos(DEFAULT_NGOS);
+          localStorage.setItem(LOCAL_NGOS_KEY, JSON.stringify(DEFAULT_NGOS));
         }
       }
 
@@ -142,8 +172,14 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             setInvoices(JSON.parse(savedInvoices));
           } catch {
-            setInvoices([]);
+            const seed = SAMPLE_OCTOBER_DUES.map(i => ({ ...i, id: crypto.randomUUID() }));
+            setInvoices(seed);
+            localStorage.setItem(LOCAL_INVOICES_KEY, JSON.stringify(seed));
           }
+        } else {
+          const seed = SAMPLE_OCTOBER_DUES.map(i => ({ ...i, id: crypto.randomUUID() }));
+          setInvoices(seed);
+          localStorage.setItem(LOCAL_INVOICES_KEY, JSON.stringify(seed));
         }
         if (savedBatches) {
           try {
@@ -159,8 +195,12 @@ export const DuesProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           setInvoices(JSON.parse(savedInvoices));
         } catch {
-          setInvoices([]);
+          const seed = SAMPLE_OCTOBER_DUES.map(i => ({ ...i, id: crypto.randomUUID() }));
+          setInvoices(seed);
         }
+      } else {
+        const seed = SAMPLE_OCTOBER_DUES.map(i => ({ ...i, id: crypto.randomUUID() }));
+        setInvoices(seed);
       }
     } finally {
       setLoading(false);
